@@ -1,58 +1,83 @@
+import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = 8080;
-const wss = new WebSocketServer({ port: PORT });
+const webClients = new Set<WebSocket>();
 
-let webClient: WebSocket | null = null;
-let robloxClient: WebSocket | null = null;
+// คิวสำหรับเก็บคำสั่งอัปเดต Property ที่ส่งมาจาก Web UI
+let pendingUpdates: Array<{ id: string; property: string; value: any }> = [];
 
-console.log(`[ExplorerRS Bridge] Server running on ws://localhost:${PORT}`);
+const server = http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-wss.on('connection', (ws, req) => {
-  console.log(`[Bridge] New connection established from ${req.socket.remoteAddress}`);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
-  ws.on('message', (message: string) => {
-    try {
-      const data = JSON.parse(message.toString());
-      
-      // ตัวอย่างการทำ Handshake เพื่อแยกฝั่ง Web และ Roblox Studio
-      if (data.type === 'connection.hello') {
-        if (data.role === 'web') {
-          webClient = ws;
-          console.log('[Bridge] Registered Web Client');
-        } else if (data.role === 'roblox') {
-          robloxClient = ws;
-          console.log('[Bridge] Registered Roblox Studio Plugin');
-        }
+  // 1. Endpoint รับ Hierarchy จาก Roblox
+  if (req.url === '/api/sync' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body);
+        webClients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(payload));
+          }
+        });
 
-        ws.send(JSON.stringify({
-          type: 'connection.ready',
-          status: 'connected',
-          timestamp: Date.now()
-        }));
-        return;
+        // ส่งคิวคำสั่งที่ค้างอยู่กลับไปให้ Roblox Studio รัน
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', updates: pendingUpdates }));
+        pendingUpdates = []; // ล้างคิวเมื่อส่งแล้ว
+      } catch (err) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
       }
+    });
+    return;
+  }
 
-      // Relay ข้อความจาก Web -> Roblox Studio
-      if (ws === webClient && robloxClient && robloxClient.readyState === WebSocket.OPEN) {
-        robloxClient.send(message.toString());
-      } 
-      // Relay ข้อความจาก Roblox Studio -> Web
-      else if (ws === robloxClient && webClient && webClient.readyState === WebSocket.OPEN) {
-        webClient.send(message.toString());
+  // 2. Endpoint รับคำสั่งแก้ Property จาก Web UI
+  if (req.url === '/api/update-property' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body); // { id, property, value }
+        pendingUpdates.push(payload);
+        console.log('[Bridge] Queued property update:', payload);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'queued' }));
+      } catch (err) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
       }
-    } catch (error) {
-      console.error('[Bridge] Error parsing message:', error);
-    }
-  });
+    });
+    return;
+  }
+
+  res.writeHead(404);
+  res.end('Not Found');
+});
+
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', (ws) => {
+  console.log('[Bridge] New Web Client Connected');
+  webClients.add(ws);
 
   ws.on('close', () => {
-    if (ws === webClient) {
-      console.log('[Bridge] Web Client disconnected');
-      webClient = null;
-    } else if (ws === robloxClient) {
-      console.log('[Bridge] Roblox Plugin disconnected');
-      robloxClient = null;
-    }
+    webClients.delete(ws);
   });
+});
+
+server.listen(PORT, () => {
+  console.log(`[Bridge Server] Running on http://localhost:${PORT}`);
 });
