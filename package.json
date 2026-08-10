@@ -1,0 +1,16 @@
+{
+  "name": "explorerrs",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ExplorerRS - A Roblox Studio hierarchy and development environment",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:bridge": "npm run dev --workspace=apps/bridge",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces"
+  }
+}
