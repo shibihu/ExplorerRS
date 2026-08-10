@@ -1,0 +1,31 @@
+========================================
+ExplorerRS BUILD RESULTS
+========================================
+
+=== @explorerrs/bridge BUILD ===
+
+> @explorerrs/bridge@0.1.0 build
+> tsc
+
+error TS18003: No inputs were found in config file '/workspaces/ExplorerRS/apps/bridge/tsconfig.json'. Specified 'include' paths were '["src"]' and 'exclude' paths were '["/workspaces/ExplorerRS/apps/bridge/dist"]'.
+npm error Lifecycle script `build` failed with error:
+npm error code 2
+npm error path /workspaces/ExplorerRS/apps/bridge
+npm error workspace @explorerrs/bridge@0.1.0
+npm error location /workspaces/ExplorerRS/apps/bridge
+npm error command failed
+npm error command sh -c tsc
+
+Bridge exit code: 2
+
+=== @explorerrs/shared BUILD ===
+
+> @explorerrs/shared@0.1.0 build
+> tsc
+
+
+Shared exit code: 0
+
+========================================
+BUILD COMPLETE
+========================================
