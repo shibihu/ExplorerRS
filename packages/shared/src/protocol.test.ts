@@ -5,11 +5,37 @@ import {
   type ChangeSet,
   type ExplorerRSMessage,
   type InstanceNode,
+  parseMessage,
 } from "./index.js";
 
 describe("ExplorerRS Shared Protocol", () => {
   it("uses protocol version 1", () => {
     expect(PROTOCOL_VERSION).toBe(1);
+  });
+
+  it("safely parses a valid message", () => {
+    const raw = JSON.stringify({
+      type: "selection.change",
+      protocolVersion: PROTOCOL_VERSION,
+      payload: { instanceId: "inst-1" },
+    });
+    const parsed = parseMessage(raw);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.type).toBe("selection.change");
+    expect(parsed?.protocolVersion).toBe(1);
+  });
+
+  it("returns null for an invalid message", () => {
+    const raw = JSON.stringify({
+      type: "selection.change",
+    });
+    const parsed = parseMessage(raw);
+    expect(parsed).toBeNull();
+  });
+
+  it("returns null for malformed JSON", () => {
+    const parsed = parseMessage("not json");
+    expect(parsed).toBeNull();
   });
 
   it("represents a Roblox hierarchy node", () => {
