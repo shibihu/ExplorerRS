@@ -8,8 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:web": "npm run dev --workspace=apps/web",
-    "dev:bridge": "npm run dev --workspace=apps/bridge",
+    "dev:web": "npm run build --workspace=@explorerrs/shared && npm run dev --workspace=apps/web",
+    "dev:bridge": "npm run build --workspace=@explorerrs/shared && npm run dev --workspace=apps/bridge",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces"
   }
