@@ -14,13 +14,31 @@ export type MessageType =
   | "properties.request"
   | "properties.response"
   | "changes.apply"
-  | "changes.result";
+  | "changes.result"
+  | "selection.change";
 
 export interface ExplorerRSMessage<T = unknown> {
   type: MessageType;
   requestId?: string;
   protocolVersion: number;
   payload?: T;
+}
+
+export function parseMessage(data: string): ExplorerRSMessage | null {
+  try {
+    const msg = JSON.parse(data);
+    if (
+      msg &&
+      typeof msg === "object" &&
+      typeof msg.type === "string" &&
+      typeof msg.protocolVersion === "number"
+    ) {
+      return msg as ExplorerRSMessage;
+    }
+  } catch {
+    // Silent catch
+  }
+  return null;
 }
 
 export interface HierarchyResponsePayload {
