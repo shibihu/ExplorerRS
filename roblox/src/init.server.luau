@@ -1,0 +1,238 @@
+local HttpService = game:GetService("HttpService")
+local Selection = game:GetService("Selection")
+
+local BRIDGE_URL = "wss://scaling-halibut-8080.app.github.dev"
+local HTTP_URL = string.gsub(string.gsub(BRIDGE_URL, "^wss://", "https://"), "^ws://", "http://")
+
+print("[ExplorerRS] Roblox Studio Plugin Initialized. Bridge HTTP endpoint:", HTTP_URL)
+
+-- Recursive helper to locate Roblox Instances by their DebugId
+local function findInstanceByDebugId(root, debugId)
+    if root:GetDebugId() == debugId then
+        return root
+    end
+    for _, descendant in ipairs(root:GetDescendants()) do
+        if descendant:GetDebugId() == debugId then
+            return descendant
+        end
+    end
+    return nil
+end
+
+-- Recursive function to generate the Instance Tree
+local function getHierarchy(instance)
+    local node = {
+        id = instance:GetDebugId(),
+        name = instance.Name,
+        className = instance.ClassName,
+        properties = {
+            Name = instance.Name,
+            ClassName = instance.ClassName
+        },
+        children = {}
+    }
+    
+    for _, child in ipairs(instance:GetChildren()) do
+        if not child:IsA("CoreScript") then
+            table.insert(node.children, getHierarchy(child))
+        end
+    end
+    
+    return node
+end
+
+-- Pending incremental changes queue
+local pendingChanges = {}
+
+local function queueChange(change)
+    table.insert(pendingChanges, change)
+end
+
+-- Connect and disconnect property/parent listeners for real-time changes
+local connectedSignals = {}
+
+local function trackInstance(instance)
+    if connectedSignals[instance] then return end
+
+    local conn = instance.Changed:Connect(function(property)
+        if property == "Name" then
+            queueChange({
+                type = "rename",
+                instanceId = instance:GetDebugId(),
+                newName = instance.Name
+            })
+        elseif property == "Parent" then
+            if instance.Parent then
+                queueChange({
+                    type = "move",
+                    instanceId = instance:GetDebugId(),
+                    newParentId = instance.Parent:GetDebugId()
+                })
+            end
+        end
+    end)
+    connectedSignals[instance] = conn
+end
+
+local function untrackInstance(instance)
+    local conn = connectedSignals[instance]
+    if conn then
+        conn:Disconnect()
+        connectedSignals[instance] = nil
+    end
+end
+
+-- Setup workspace hierarchy change listeners
+local function setupListeners()
+    game.Workspace.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("CoreScript") then return end
+        trackInstance(descendant)
+        queueChange({
+            type = "create",
+            parentId = descendant.Parent:GetDebugId(),
+            instanceId = descendant:GetDebugId(),
+            className = descendant.ClassName,
+            name = descendant.Name
+        })
+    end)
+
+    game.Workspace.DescendantRemoving:Connect(function(descendant)
+        if descendant:IsA("CoreScript") then return end
+        untrackInstance(descendant)
+        queueChange({
+            type = "delete",
+            instanceId = descendant:GetDebugId()
+        })
+    end)
+
+    -- Track all existing descendants in Workspace
+    for _, descendant in ipairs(game.Workspace:GetDescendants()) do
+        if not descendant:IsA("CoreScript") then
+            trackInstance(descendant)
+        end
+    end
+    trackInstance(game.Workspace)
+end
+
+setupListeners()
+print("[ExplorerRS] Workspace change listeners attached successfully.")
+
+-- Polling loop task to sync with bridge
+local hasSentInitialHierarchy = false
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+
+        local payload = nil
+        local changesToSend = nil
+
+        if not hasSentInitialHierarchy then
+            -- Generate and send initial full hierarchy snapshot
+            local success, hierarchyData = pcall(function()
+                return getHierarchy(game.Workspace)
+            end)
+
+            if success then
+                payload = {
+                    type = "hierarchy.full",
+                    protocolVersion = 1,
+                    data = {
+                        Workspace = hierarchyData
+                    }
+                }
+            else
+                warn("[ExplorerRS] Failed to generate initial hierarchy snapshot.")
+            end
+        elseif #pendingChanges > 0 then
+            -- Copy and send pending changes
+            changesToSend = pendingChanges
+            pendingChanges = {}
+
+            payload = {
+                type = "changes.apply",
+                protocolVersion = 1,
+                payload = {
+                    changeSet = {
+                        id = "change-" .. tostring(os.time()) .. "-" .. tostring(math.random(1000, 9999)),
+                        changes = changesToSend
+                    }
+                }
+            }
+        else
+            -- Standard heartbeat poll to receive bridge commands
+            payload = {
+                type = "poll",
+                protocolVersion = 1
+            }
+        end
+
+        if payload then
+            local successJson, jsonStr = pcall(function()
+                return HttpService:JSONEncode(payload)
+            end)
+
+            if successJson then
+                local successPost, response = pcall(function()
+                    return HttpService:PostAsync(HTTP_URL .. "/api/sync", jsonStr, Enum.HttpContentType.ApplicationJson)
+                end)
+
+                if successPost then
+                    if payload.type == "hierarchy.full" then
+                        hasSentInitialHierarchy = true
+                        print("[ExplorerRS] Successfully synchronized full hierarchy to Bridge.")
+                    elseif payload.type == "changes.apply" then
+                        print("[ExplorerRS] Successfully synchronized " .. tostring(#changesToSend) .. " incremental changes.")
+                    end
+
+                    -- Process updates returned from bridge
+                    local successDecode, decoded = pcall(function()
+                        return HttpService:JSONDecode(response)
+                    end)
+
+                    if successDecode and decoded then
+                        -- 1. Sync Selection from Bridge
+                        if decoded.selection and decoded.selection ~= "" then
+                            local selectedId = decoded.selection
+                            local target = findInstanceByDebugId(game.Workspace, selectedId)
+                            if target then
+                                pcall(function()
+                                    Selection:Set({target})
+                                    print("[ExplorerRS] Synced selection from bridge:", target.Name)
+                                end)
+                            end
+                        end
+
+                        -- 2. Sync Property Updates from Bridge
+                        if decoded.updates and #decoded.updates > 0 then
+                            for _, update in ipairs(decoded.updates) do
+                                local target = findInstanceByDebugId(game.Workspace, update.id)
+                                if target then
+                                    local property = update.property
+                                    local value = update.value
+
+                                    local successProp, err = pcall(function()
+                                        target[property] = value
+                                    end)
+                                    if successProp then
+                                        print("[ExplorerRS] Property '" .. property .. "' updated successfully to '" .. tostring(value) .. "' on " .. target.Name)
+                                    else
+                                        warn("[ExplorerRS] Failed to update property '" .. property .. "' on " .. target.Name .. ": " .. tostring(err))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                else
+                    -- Re-queue changes if network sync fails
+                    if changesToSend then
+                        for i = #changesToSend, 1, -1 do
+                            table.insert(pendingChanges, 1, changesToSend[i])
+                        end
+                    end
+                    task.wait(2)
+                end
+            end
+        end
+    end
+end)
