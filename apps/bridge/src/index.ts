@@ -11,6 +11,9 @@ let pendingUpdates: Array<{ id: string; property: string; value: any }> = [];
 // Latest selection update from Web UI
 let pendingSelection: string | null = null;
 
+// Queue for pending actions (create, delete, restore_snapshot) for Roblox Studio
+let pendingActions: Array<{ type: string; [key: string]: any }> = [];
+
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -47,19 +50,21 @@ const server = http.createServer((req, res) => {
           });
         }
 
-        // Respond with queued property updates and selection changes
+        // Respond with queued property updates, selection changes, and pending actions under 'actions'
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             status: "ok",
             updates: pendingUpdates,
             selection: pendingSelection,
+            actions: pendingActions,
           })
         );
 
         // Clear local queues
         pendingUpdates = [];
         pendingSelection = null;
+        pendingActions = [];
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Invalid JSON" }));
@@ -125,6 +130,41 @@ wss.on("connection", (ws) => {
           if (payload && typeof payload.instanceId === "string") {
             console.log("[Bridge] Selection change queued:", payload.instanceId);
             pendingSelection = payload.instanceId;
+          }
+        } else if (parsed.type === "create") {
+          const payload = parsed.payload as {
+            parentId: string;
+            className: string;
+            name: string;
+            instanceId?: string;
+          } | undefined;
+          if (payload) {
+            pendingActions.push({
+              type: "create",
+              parentId: payload.parentId,
+              instanceId: payload.instanceId || "",
+              className: payload.className,
+              name: payload.name,
+            });
+            console.log("[Bridge] Queued 'create' action:", payload);
+          }
+        } else if (parsed.type === "delete") {
+          const payload = parsed.payload as { instanceId: string } | undefined;
+          if (payload) {
+            pendingActions.push({
+              type: "delete",
+              instanceId: payload.instanceId,
+            });
+            console.log("[Bridge] Queued 'delete' action:", payload);
+          }
+        } else if (parsed.type === "restore_snapshot") {
+          const payload = parsed.payload as { snapshot: any } | undefined;
+          if (payload) {
+            pendingActions.push({
+              type: "restore_snapshot",
+              snapshot: payload.snapshot,
+            });
+            console.log("[Bridge] Queued 'restore_snapshot' action");
           }
         }
       }

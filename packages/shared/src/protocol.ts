@@ -15,7 +15,10 @@ export type MessageType =
   | "properties.response"
   | "changes.apply"
   | "changes.result"
-  | "selection.change";
+  | "selection.change"
+  | "create"
+  | "delete"
+  | "restore_snapshot";
 
 export interface ExplorerRSMessage<T = unknown> {
   type: MessageType;
