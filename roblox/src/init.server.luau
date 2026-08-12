@@ -1,7 +1,7 @@
 local HttpService = game:GetService("HttpService")
 local Selection = game:GetService("Selection")
 
-local BRIDGE_URL = "wss://scaling-halibut-8080.app.github.dev"
+local BRIDGE_URL = "wss://scaling-halibut-x59x9q5r5ggx39vvp-8080.app.github.dev"
 local HTTP_URL = string.gsub(string.gsub(BRIDGE_URL, "^wss://", "https://"), "^ws://", "http://")
 
 print("[ExplorerRS] Roblox Studio Plugin Initialized. Bridge HTTP endpoint:", HTTP_URL)
