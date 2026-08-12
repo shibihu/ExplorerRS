@@ -10,7 +10,7 @@ let robloxClient: WebSocket | null = null;
 // Queue for property updates from Web UI (consumed by Roblox poller / WS relay)
 let pendingUpdates: Array<{ id: string; property: string; value: any }> = [];
 
-// Queue for instance actions (create/delete/move) from Web UI
+// Queue for instance actions (create/delete/move/restore_snapshot) from Web UI
 let pendingActions: Array<Record<string, any>> = [];
 
 // Latest selection update from Web UI
@@ -320,6 +320,41 @@ wss.on("connection", (ws, req) => {
           if (payload && typeof payload.instanceId === "string") {
             console.log("[Bridge] Selection change queued:", payload.instanceId);
             pendingSelection = payload.instanceId;
+          }
+        } else if (parsed.type === "create") {
+          const payload = parsed.payload as {
+            parentId: string;
+            className: string;
+            name: string;
+            instanceId?: string;
+          } | undefined;
+          if (payload) {
+            pendingActions.push({
+              type: "create",
+              parentId: payload.parentId,
+              instanceId: payload.instanceId || "",
+              className: payload.className,
+              name: payload.name,
+            });
+            console.log("[Bridge] Queued 'create' action:", payload);
+          }
+        } else if (parsed.type === "delete") {
+          const payload = parsed.payload as { instanceId: string } | undefined;
+          if (payload) {
+            pendingActions.push({
+              type: "delete",
+              instanceId: payload.instanceId,
+            });
+            console.log("[Bridge] Queued 'delete' action:", payload);
+          }
+        } else if (parsed.type === "restore_snapshot") {
+          const payload = parsed.payload as { snapshot: any } | undefined;
+          if (payload) {
+            pendingActions.push({
+              type: "restore_snapshot",
+              snapshot: payload.snapshot,
+            });
+            console.log("[Bridge] Queued 'restore_snapshot' action");
           }
         }
 

@@ -405,6 +405,9 @@ export function App() {
   const [selectedNode, setSelectedNode] = useState<InstanceNode | null>(null);
   const [editName, setEditName] = useState("");
 
+  // Input states for adding new instance
+  const [newClassName, setNewClassName] = useState("Part");
+  const [newChildName, setNewChildName] = useState("NewPart");
   // Modal State for Creating Instance
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newClassName, setNewClassName] = useState("Part");
@@ -723,7 +726,175 @@ export function App() {
     }
   };
 
+  // Trigger Create Action
+  const handleCreateInstance = () => {
+    if (!selectedNode) return;
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        const uniqueId = `new-inst-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        wsRef.current.send(
+          JSON.stringify({
+            type: "create",
+            protocolVersion: 1,
+            payload: {
+              parentId: selectedNode.id,
+              instanceId: uniqueId,
+              className: newClassName,
+              name: newChildName,
+            },
+          })
+        );
+        console.log("Sent create action for parentId:", selectedNode.id);
+      }
+    } catch (err) {
+      console.error("Error sending create action:", err);
+    }
+  };
+
+  // Trigger Delete Action
+  const handleDeleteInstance = () => {
+    if (!selectedNode) return;
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "delete",
+            protocolVersion: 1,
+            payload: {
+              instanceId: selectedNode.id,
+            },
+          })
+        );
+        console.log("Sent delete action for instanceId:", selectedNode.id);
+      }
+    } catch (err) {
+      console.error("Error sending delete action:", err);
+    }
+  };
+
+  // Trigger Restore Snapshot Action
+  const handleRestoreSnapshot = () => {
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        const sampleSnapshot = {
+          id: "workspace-root",
+          name: "Workspace",
+          className: "Workspace",
+          properties: {
+            Name: "Workspace",
+            ClassName: "Workspace",
+          },
+          children: [
+            {
+              id: `spawn-${Date.now()}`,
+              name: "SpawnLocation",
+              className: "SpawnLocation",
+              children: [],
+            },
+            {
+              id: `folder-${Date.now()}`,
+              name: "RebuiltFolder",
+              className: "Folder",
+              children: [
+                {
+                  id: `part-${Date.now()}`,
+                  name: "RebuiltPart",
+                  className: "Part",
+                  children: [],
+                },
+              ],
+            },
+          ],
+        };
+
+        wsRef.current.send(
+          JSON.stringify({
+            type: "restore_snapshot",
+            protocolVersion: 1,
+            payload: {
+              snapshot: sampleSnapshot,
+            },
+          })
+        );
+        console.log("Sent restore_snapshot action");
+      }
+    } catch (err) {
+      console.error("Error sending restore snapshot action:", err);
+    }
+  };
+
   return (
+    <div
+      style={{
+        padding: "20px",
+        fontFamily: "sans-serif",
+        backgroundColor: "#0f172a",
+        minHeight: "100vh",
+        color: "#f8fafc",
+      }}
+    >
+      <h2 style={{ margin: "0 0 10px 0" }}>ExplorerRS - Two-Way Sync</h2>
+      <div
+        style={{
+          marginBottom: "15px",
+          fontSize: "0.9em",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div>
+          Status:{" "}
+          <span
+            style={{
+              color: connected ? "#22c55e" : "#ef4444",
+              fontWeight: "bold",
+            }}
+          >
+            {connected ? "Connected to Bridge" : "Disconnected"}
+          </span>
+        </div>
+        <button
+          onClick={handleRestoreSnapshot}
+          style={{
+            background: "#475569",
+            color: "#fff",
+            border: "none",
+            padding: "6px 12px",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          🔄 Restore Snapshot
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 340px",
+          gap: "15px",
+        }}
+      >
+        {/* Left: Tree */}
+        <div
+          style={{
+            border: "1px solid #334155",
+            borderRadius: "8px",
+            padding: "12px",
+            background: "#1e293b",
+            minHeight: "400px",
+          }}
+        >
+          <h3
+            style={{
+              margin: "0 0 10px 0",
+              fontSize: "1em",
+              color: "#94a3b8",
+              borderBottom: "1px solid #334155",
+              paddingBottom: "6px",
+            }}
     <div className="app-shell">
       {/* Header & Connection Status */}
       <header className="app-header">
@@ -779,6 +950,240 @@ export function App() {
         />
       </div>
 
+        {/* Right: Interactive Actions & Properties Panel */}
+        <div
+          style={{
+            border: "1px solid #334155",
+            borderRadius: "8px",
+            padding: "12px",
+            background: "#1e293b",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+          }}
+        >
+          {/* Edit Properties Section */}
+          <div>
+            <h3
+              style={{
+                margin: "0 0 10px 0",
+                fontSize: "1em",
+                color: "#94a3b8",
+                borderBottom: "1px solid #334155",
+                paddingBottom: "6px",
+              }}
+            >
+              Edit Properties
+            </h3>
+            {selectedNode ? (
+              <div>
+                <div style={{ marginBottom: "15px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.8em",
+                      color: "#94a3b8",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    Name
+                  </label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      style={{
+                        flex: 1,
+                        background: "#0f172a",
+                        border: "1px solid #475569",
+                        color: "#fff",
+                        padding: "4px 8px",
+                        borderRadius: "4px",
+                      }}
+                    />
+                    <button
+                      onClick={() => handleUpdateProperty("Name", editName)}
+                      style={{
+                        background: "#0284c7",
+                        color: "#fff",
+                        border: "none",
+                        padding: "4px 10px",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                {selectedNode.properties && (
+                  <table
+                    style={{
+                      width: "100%",
+                      fontSize: "0.85em",
+                      borderCollapse: "collapse",
+                    }}
+                  >
+                    <tbody>
+                      {Object.entries(selectedNode.properties).map(
+                        ([key, val]) => (
+                          <tr
+                            key={key}
+                            style={{ borderBottom: "1px solid #334155" }}
+                          >
+                            <td style={{ padding: "6px 0", color: "#94a3b8" }}>
+                              {key}
+                            </td>
+                            <td
+                              style={{
+                                padding: "6px 0",
+                                textAlign: "right",
+                                color: "#f1f5f9",
+                              }}
+                            >
+                              {String(val)}
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ) : (
+              <p style={{ color: "#64748b", fontSize: "0.85em" }}>
+                Select an object to edit properties
+              </p>
+            )}
+          </div>
+
+          {/* Instance Actions Section */}
+          {selectedNode && (
+            <div
+              style={{
+                borderTop: "1px solid #334155",
+                paddingTop: "12px",
+              }}
+            >
+              <h3
+                style={{
+                  margin: "0 0 10px 0",
+                  fontSize: "1em",
+                  color: "#94a3b8",
+                  paddingBottom: "6px",
+                }}
+              >
+                Instance Actions
+              </h3>
+
+              {/* Add Child Sub-section */}
+              <div
+                style={{
+                  background: "#0f172a",
+                  padding: "10px",
+                  borderRadius: "6px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  marginBottom: "12px",
+                }}
+              >
+                <h4 style={{ margin: 0, fontSize: "0.85em", color: "#38bdf8" }}>
+                  ➕ Add Child to {selectedNode.name}
+                </h4>
+                <div>
+                  <label
+                    style={{
+                      fontSize: "0.75em",
+                      color: "#94a3b8",
+                      display: "block",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    ClassName
+                  </label>
+                  <input
+                    type="text"
+                    value={newClassName}
+                    onChange={(e) => setNewClassName(e.target.value)}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#1e293b",
+                      border: "1px solid #475569",
+                      color: "#fff",
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      fontSize: "0.8em",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      fontSize: "0.75em",
+                      color: "#94a3b8",
+                      display: "block",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    Instance Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newChildName}
+                    onChange={(e) => setNewChildName(e.target.value)}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#1e293b",
+                      border: "1px solid #475569",
+                      color: "#fff",
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      fontSize: "0.8em",
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={handleCreateInstance}
+                  style={{
+                    background: "#22c55e",
+                    color: "#fff",
+                    border: "none",
+                    padding: "6px 12px",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "0.85em",
+                    fontWeight: "bold",
+                    marginTop: "4px",
+                  }}
+                >
+                  Create Instance
+                </button>
+              </div>
+
+              {/* Delete Instance Sub-section */}
+              <button
+                onClick={handleDeleteInstance}
+                style={{
+                  width: "100%",
+                  background: "#ef4444",
+                  color: "#fff",
+                  border: "none",
+                  padding: "8px 12px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "0.85em",
+                  fontWeight: "bold",
+                }}
+              >
+                🗑️ Delete selected {selectedNode.name}
+              </button>
+            </div>
+          )}
       <div className="panels-grid">
         {/* Left: Explorer Tree Panel */}
         <GlareHover

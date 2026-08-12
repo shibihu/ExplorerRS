@@ -223,6 +223,90 @@ task.spawn(function()
                             end
                         end
 
+                        -- 3. Process Actions returned from Bridge (create, delete, restore_snapshot)
+                        if decoded.actions and #decoded.actions > 0 then
+                            for _, action in ipairs(decoded.actions) do
+                                if action.type == "create" then
+                                    local parentId = action.parentId
+                                    local className = action.className
+                                    local name = action.name
+
+                                    local parent = findInstanceByDebugId(game.Workspace, parentId)
+                                    if parent then
+                                        local successCreate, newInst = pcall(function()
+                                            return Instance.new(className)
+                                        end)
+                                        if successCreate and newInst then
+                                            newInst.Name = name
+                                            newInst.Parent = parent
+                                            print("[ExplorerRS] Created instance of ClassName '" .. className .. "' named '" .. name .. "' under parent '" .. parent.Name .. "'")
+                                        else
+                                            warn("[ExplorerRS] Failed to create instance of ClassName '" .. className .. "'")
+                                        end
+                                    else
+                                        warn("[ExplorerRS] 'create' action failed: parent instance not found for parentId '" .. tostring(parentId) .. "'")
+                                    end
+                                elseif action.type == "delete" then
+                                    local instanceId = action.instanceId
+                                    local target = findInstanceByDebugId(game.Workspace, instanceId)
+                                    if target then
+                                        local successDestroy, err = pcall(function()
+                                            target:Destroy()
+                                        end)
+                                        if successDestroy then
+                                            print("[ExplorerRS] Deleted target instance '" .. target.Name .. "' with DebugId '" .. tostring(instanceId) .. "'")
+                                        else
+                                            warn("[ExplorerRS] Failed to delete target instance '" .. target.Name .. "': " .. tostring(err))
+                                        end
+                                    else
+                                        warn("[ExplorerRS] 'delete' action failed: target instance not found for instanceId '" .. tostring(instanceId) .. "'")
+                                    end
+                                elseif action.type == "restore_snapshot" then
+                                    print("[ExplorerRS] Restoring snapshot from bridge action...")
+
+                                    -- Clear existing non-CoreScript, non-Camera, non-Terrain instances
+                                    for _, child in ipairs(game.Workspace:GetChildren()) do
+                                        if not child:IsA("CoreScript") and not child:IsA("Camera") and child.Name ~= "Terrain" then
+                                            pcall(function()
+                                                child:Destroy()
+                                            end)
+                                        end
+                                    end
+
+                                    -- Recursive function to rebuild from snapshot
+                                    local function rebuildHierarchy(parentInstance, node)
+                                        if not node then return end
+                                        local instance = nil
+                                        if node.className == "Workspace" then
+                                            instance = game.Workspace
+                                        else
+                                            local successCreate, newInst = pcall(function()
+                                                return Instance.new(node.className)
+                                            end)
+                                            if successCreate and newInst then
+                                                instance = newInst
+                                                instance.Name = node.name
+                                                instance.Parent = parentInstance
+                                            else
+                                                warn("[ExplorerRS] Snapshot rebuild failed to create ClassName '" .. tostring(node.className) .. "'")
+                                                return
+                                            end
+                                        end
+
+                                        if node.children then
+                                            for _, childNode in ipairs(node.children) do
+                                                rebuildHierarchy(instance, childNode)
+                                            end
+                                        end
+                                    end
+
+                                    local successRebuild, err = pcall(function()
+                                        rebuildHierarchy(nil, action.snapshot)
+                                    end)
+                                    if successRebuild then
+                                        print("[ExplorerRS] Successfully restored snapshot and rebuilt Workspace hierarchy.")
+                                    else
+                                        warn("[ExplorerRS] Error restoring snapshot: " .. tostring(err))
                         -- 3. Sync Instance Actions (create/delete) from Bridge
                         if decoded.actions and #decoded.actions > 0 then
                             for _, action in ipairs(decoded.actions) do
