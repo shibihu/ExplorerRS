@@ -1,0 +1,16 @@
+{
+  "name": "ExplorerRS",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "forwardPorts": [5173, 8080],
+  "portsAttributes": {
+    "5173": {
+      "label": "ExplorerRS Web UI (Vite)",
+      "visibility": "public"
+    },
+    "8080": {
+      "label": "ExplorerRS Bridge Server (WebSocket)",
+      "visibility": "public"
+    }
+  },
+  "postCreateCommand": "npm install"
+}
