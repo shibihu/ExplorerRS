@@ -1,7 +1,7 @@
 local HttpService = game:GetService("HttpService")
 local Selection = game:GetService("Selection")
 
-local BRIDGE_URL = "wss://scaling-halibut-8080.app.github.dev"
+local BRIDGE_URL = "wss://scaling-halibut-x59x9q5r5ggx39vvp-8080.app.github.dev"
 local HTTP_URL = string.gsub(string.gsub(BRIDGE_URL, "^wss://", "https://"), "^ws://", "http://")
 
 print("[ExplorerRS] Roblox Studio Plugin Initialized. Bridge HTTP endpoint:", HTTP_URL)
@@ -218,6 +218,43 @@ task.spawn(function()
                                         print("[ExplorerRS] Property '" .. property .. "' updated successfully to '" .. tostring(value) .. "' on " .. target.Name)
                                     else
                                         warn("[ExplorerRS] Failed to update property '" .. property .. "' on " .. target.Name .. ": " .. tostring(err))
+                                    end
+                                end
+                            end
+                        end
+
+                        -- 3. Sync Instance Actions (create/delete) from Bridge
+                        if decoded.actions and #decoded.actions > 0 then
+                            for _, action in ipairs(decoded.actions) do
+                                if action.type == "create" then
+                                    local parent = findInstanceByDebugId(game.Workspace, action.parentId)
+                                    if not parent then
+                                        warn("[ExplorerRS] Cannot create instance: parent not found (DebugId: " .. tostring(action.parentId) .. ")")
+                                    else
+                                        local successCreate, createErr = pcall(function()
+                                            local instance = Instance.new(action.className)
+                                            instance.Name = action.name
+                                            instance.Parent = parent
+                                        end)
+                                        if successCreate then
+                                            print("[ExplorerRS] Created instance '" .. tostring(action.name) .. "' (" .. tostring(action.className) .. ") under " .. parent.Name)
+                                        else
+                                            warn("[ExplorerRS] Failed to create instance '" .. tostring(action.name) .. "': " .. tostring(createErr))
+                                        end
+                                    end
+                                elseif action.type == "delete" then
+                                    local target = findInstanceByDebugId(game.Workspace, action.instanceId)
+                                    if not target then
+                                        warn("[ExplorerRS] Cannot delete instance: not found (DebugId: " .. tostring(action.instanceId) .. ")")
+                                    else
+                                        local successDelete, deleteErr = pcall(function()
+                                            target:Destroy()
+                                        end)
+                                        if successDelete then
+                                            print("[ExplorerRS] Deleted instance '" .. target.Name .. "' (" .. tostring(action.instanceId) .. ")")
+                                        else
+                                            warn("[ExplorerRS] Failed to delete instance '" .. target.Name .. "': " .. tostring(deleteErr))
+                                        end
                                     end
                                 end
                             end
